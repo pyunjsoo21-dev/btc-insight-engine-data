@@ -2,7 +2,8 @@ name: bybit-snapshot
 
 on:
   schedule:
-    - cron: "0 15,21,3,9 * * *"   # 매일 KST 00·06·12·18시
+    # KST 00·06·12·18 (UTC 15,21,03,09)
+    - cron: "0 15,21,3,9 * * *"
   workflow_dispatch: {}
 
 jobs:
@@ -12,15 +13,22 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Run snapshot
+
+      - name: Ensure folders
+        run: mkdir -p data scripts
+
+      - name: Run snapshot (use script in repo)
         run: |
-          mkdir -p data scripts
-          echo "Downloading script..."
-          curl -sSL https://raw.githubusercontent.com/openai-labs-helper/bybit-snapshot/main/bybit_snapshot.py -o scripts/bybit_snapshot.py
           python scripts/bybit_snapshot.py
+
+      - name: Show snapshot.json (for debug)
+        run: |
+          test -f data/snapshot.json && head -n 50 data/snapshot.json || echo "snapshot.json not found"
+
       - name: Commit & Push
         run: |
           git config user.name "github-actions[bot]"
