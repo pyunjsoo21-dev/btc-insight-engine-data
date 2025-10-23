@@ -1,0 +1,66 @@
+name: binance-btcusdt-snapshot
+
+on:
+  schedule:
+    - cron: "0 15,21,3,9 * * *"    # KST 00·06·12·18
+  workflow_dispatch: {}
+
+jobs:
+  fetch-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run snapshot (Binance USDⓈ-M Futures)
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, urllib.parse, datetime
+          BASE="https://fapi.binance.com"; SYMBOL="BTCUSDT"
+          def get(p, q):
+              u = BASE+p+"?"+urllib.parse.urlencode(q)
+              r = urllib.request.urlopen(urllib.request.Request(u, headers={"User-Agent":"BJ/1.2"}), timeout=15)
+              return json.loads(r.read().decode())
+
+          t = get("/fapi/v1/ticker/24hr", {"symbol": SYMBOL})
+          def k(i):
+              d = get("/fapi/v1/klines", {"symbol": SYMBOL, "interval": i, "limit": 1})[0]
+              return {"interval": i, "open": float(d[1]), "high": float(d[2]), "low": float(d[3]), "close": float(d[4])}
+          k4, k12, k1d = [k(i) for i in ("4h","12h","1d")]
+          f = get("/fapi/v1/fundingRate", {"symbol": SYMBOL, "limit": 1})[0]
+          oi = get("/fapi/v1/openInterest", {"symbol": SYMBOL})
+
+          now = datetime.datetime.utcnow()
+          data = {
+            "meta": {
+              "time_utc": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+              "time_kst": (now + datetime.timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S KST"),
+              "source": "binance_usds_futures"
+            },
+            "ticker_24h": {
+              "last": float(t["lastPrice"]),
+              "high24h": float(t["highPrice"]),
+              "low24h": float(t["lowPrice"]),
+              "change24h_percent": float(t["priceChangePercent"])
+            },
+            "kline": {"4h": k4, "12h": k12, "1d": k1d},
+            "funding_rate": float(f["fundingRate"]),
+            "open_interest": float(oi["openInterest"])
+          }
+          os.makedirs("data", exist_ok=True)
+          with open("data/snapshot.json","w") as fp:
+              json.dump(data, fp, indent=2)
+          print("✅ snapshot saved:", data["meta"]["time_kst"])
+          PY
+
+      - name: Commit & Push snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshot.json
+          git commit -m "auto: binance snapshot $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "no changes"
+          git push
