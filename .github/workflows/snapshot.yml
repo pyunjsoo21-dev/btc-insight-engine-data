@@ -1,0 +1,30 @@
+name: bybit-snapshot
+
+on:
+  schedule:
+    - cron: "0 15,21,3,9 * * *"   # 매일 KST 00·06·12·18시
+  workflow_dispatch: {}
+
+jobs:
+  fetch-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run snapshot
+        run: |
+          mkdir -p data scripts
+          echo "Downloading script..."
+          curl -sSL https://raw.githubusercontent.com/openai-labs-helper/bybit-snapshot/main/bybit_snapshot.py -o scripts/bybit_snapshot.py
+          python scripts/bybit_snapshot.py
+      - name: Commit & Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshot.json
+          git commit -m "auto: update snapshot $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "no changes"
+          git push
